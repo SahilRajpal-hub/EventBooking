@@ -2,6 +2,7 @@ const express = require("express");
 const dotenv = require("dotenv");
 const { graphqlHTTP } = require("express-graphql");
 const { buildSchema } = require("graphql");
+const bcrypt = require("bcryptjs");
 const connectDb = require("./config/db");
 
 const app = express();
@@ -11,6 +12,7 @@ dotenv.config();
 connectDb();
 
 const Event = require("./models/EventModel");
+const User = require("./models/UserModel");
 
 const PORT = 3000;
 
@@ -24,6 +26,13 @@ app.use(
             description: String!
             price: Float!
             date: String!
+            creator: String!
+        }
+
+        type User {
+            _id: ID!
+            email: String!
+            password: String
         }
 
         input EventInput {
@@ -31,6 +40,12 @@ app.use(
             description: String!
             price: Float!
             date: String!
+            creator: String!
+        }
+
+        input UserInput {
+            email: String!
+            password: String!
         }
 
         type RootQuery {
@@ -39,6 +54,7 @@ app.use(
 
         type RootMutation {
             createEvent(eventInput: EventInput): Event
+            createUser(userInput: UserInput): User
         }
 
         schema {
@@ -56,16 +72,39 @@ app.use(
         }
       },
       createEvent: async (args) => {
+        // "616eb68062e3433d14ed2ce5";
         const event = new Event({
           title: args.eventInput.title,
           description: args.eventInput.description,
           price: args.eventInput.price,
           date: new Date(args.eventInput.date),
+          creator: args.eventInput.creator,
         });
 
         try {
           const savedEvent = await event.save();
+          const userFetch = await User.findById(event.creator);
+          userFetch.createdEvents.push(event._id);
+          await userFetch.save();
           return savedEvent;
+        } catch (err) {
+          console.error(err);
+        }
+      },
+      createUser: async (args) => {
+        const userExist = await User.findOne({ email: args.userInput.email });
+        if (userExist) {
+          throw new Error("User already exist");
+        }
+        const hashedPassword = await bcrypt.hash(args.userInput.password, 12);
+        const user = new User({
+          email: args.userInput.email,
+          password: hashedPassword,
+        });
+
+        try {
+          const savedUser = await user.save();
+          return { email: savedUser.email, _id: savedUser._id, password: null };
         } catch (err) {
           console.error(err);
         }
